@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: proj1devargocdsa
+  name: argocdtlsdeployment
   namespace: argocd
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: proj1devargocdsa
+      app: argocdtlsdeployment
   template:
     metadata:
       labels:
-        app: proj1devargocdsa
+        app: argocdtlsdeployment
         azure.workload.identity/use: "true"
     spec:
-      serviceAccountName: proj1devargocdsa
+      serviceAccountName: argocdtlssa
       containers:
         - name: sync
           image: mcr.microsoft.com/oss/kubernetes/pause:3.6
@@ -35,4 +35,4 @@ spec:
             driver: secrets-store.csi.k8s.io
             readOnly: true
             volumeAttributes:
-              secretProviderClass: proj1devargocdcert
+              secretProviderClass: argocdtlsspc
