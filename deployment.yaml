@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proj1devargocdsa
+  namespace: argocd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: proj1devargocdsa
+  template:
+    metadata:
+      labels:
+        app: proj1devargocdsa
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: proj1devargocdsa
+      containers:
+        - name: sync
+          image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 20m
+              memory: 32Mi
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: proj1devargocdcert
