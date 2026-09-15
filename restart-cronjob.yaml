@@ -55,3 +55,4 @@ spec:
                   echo "cert changed ($OLD_HASH -> $NEW_HASH), restarting argocd-server"
                   kubectl patch deployment argocd-server -n argocd --type=merge -p \
                     "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"argocd-tls/synced-cert-hash\":\"$NEW_HASH\",\"argocd-tls/restartedAt\":\"$(date -u +%FT%TZ)\"}}}}}"
+

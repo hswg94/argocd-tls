@@ -34,3 +34,4 @@ subjects:
   - kind: ServiceAccount
     name: argocdtlsrestartsa
     namespace: argocd
+
