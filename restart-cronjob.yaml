@@ -1,0 +1,53 @@
+# Argo CD's server only reads argocd-server-tls once at process startup (see
+# README) - the Secrets Store CSI driver rotates that secret's contents
+# automatically (secret_rotation_enabled in project1's modules/aks), but
+# nothing made argocd-server pick up the change. This CronJob closes that
+# gap: every run it hashes the synced cert and, if the hash moved since the
+# last run, patches argocd-server's pod template to trigger a rolling
+# restart - the same thing `kubectl rollout restart` does under the hood.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: argocd-server-tls-restart
+  namespace: argocd
+spec:
+  # Slightly slower than the 1m Key Vault secret_rotation_interval so a
+  # rotation has always landed in the k8s secret before this checks it.
+  schedule: "*/2 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: argocdtlsrestartsa
+          restartPolicy: Never
+          containers:
+            - name: restart-on-cert-change
+              image: bitnami/kubectl:1.31
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 50m
+                  memory: 32Mi
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+
+                  NEW_HASH=$(kubectl get secret argocd-server-tls -n argocd -o jsonpath='{.data.tls\.crt}' | sha256sum | cut -d' ' -f1)
+                  OLD_HASH=$(kubectl get deployment argocd-server -n argocd -o jsonpath="{.spec.template.metadata.annotations['argocd-tls/synced-cert-hash']}" || true)
+
+                  if [ "$NEW_HASH" = "$OLD_HASH" ]; then
+                    echo "cert unchanged ($NEW_HASH), nothing to do"
+                    exit 0
+                  fi
+
+                  echo "cert changed ($OLD_HASH -> $NEW_HASH), restarting argocd-server"
+                  kubectl patch deployment argocd-server -n argocd --type=merge -p \
+                    "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"argocd-tls/synced-cert-hash\":\"$NEW_HASH\",\"argocd-tls/restartedAt\":\"$(date -u +%FT%TZ)\"}}}}}"

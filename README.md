@@ -33,6 +33,8 @@ self-maintained component just for this one cert. Worth revisiting if more
 | `serviceaccount.yaml` | `argocdtlssa` ServiceAccount, federated to the `argocdwi` Azure managed identity via workload identity |
 | `secretproviderclass.yaml` | `argocdtlsspc` SecretProviderClass - pulls the `proj1devargocdcert` object from Key Vault and syncs it into the `argocd-server-tls` secret |
 | `deployment.yaml` | `argocdtlsdeployment` - a near-empty pod that mounts the `SecretProviderClass`, which is what actually triggers the CSI driver sync |
+| `restart-rbac.yaml` | `argocdtlsrestartsa` ServiceAccount + a `Role`/`RoleBinding` scoped to reading `argocd-server-tls` and patching `argocd-server` only |
+| `restart-cronjob.yaml` | `argocd-server-tls-restart` CronJob - restarts `argocd-server` when the synced cert changes |
 
 Deployed by Argo CD itself (`argocd_application.argocd_tls_sync` in
 [project1](https://github.com/hswg94/project1)'s `modules/argocd/main.tf`),
@@ -40,18 +42,20 @@ synced automatically from the repo root.
 
 ## After the cert is (re)synced: restart argocd-server
 
-Argo CD reads `argocd-server-tls` once at boot, not on change. After the
-first sync, or after `proj1devargocdcert` renews, roll the deployment:
+Argo CD reads `argocd-server-tls` once at boot, not on change. `restart-cronjob.yaml`
+handles this now: every 2 minutes it hashes the synced `tls.crt` and, if the
+hash moved since the last run, patches `argocd-server`'s pod template
+annotations - the same mechanism `kubectl rollout restart` uses - which
+triggers a rolling restart. RBAC for the job (`restart-rbac.yaml`) only
+allows `get` on the `argocd-server-tls` secret and `get`/`patch` on the
+`argocd-server` deployment by name, nothing else.
+
+If `argocd-server` ever needs restarting manually (e.g. testing), the old
+one-liner still works:
 
 ```bash
 kubectl -n argocd rollout restart deployment/argocd-server
 ```
-
-This isn't automated yet. See project1's notes on
-[Reloader](https://github.com/stakater/Reloader) if that stops being
-acceptable (annotate `argocd-server` to auto-restart on secret change) —
-untested here, and worth confirming the extension's periodic Helm
-reconciliation doesn't strip the annotation back out.
 
 ## Cert renewal
 
